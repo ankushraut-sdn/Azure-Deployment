@@ -3,8 +3,6 @@
 ## 1. Project Overview
 
 **Project Name:** Azure-Deployment (Benefits Eligibility Model)
-**Project Type:** ML model deployment (Azure Machine Learning)
-**Status:** Development
 
 ### Description
 
