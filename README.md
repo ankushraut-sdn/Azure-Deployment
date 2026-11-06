@@ -1,198 +1,77 @@
-# MICROSOFT AZURE ML
-## Benefits Eligibility Model
-### Technical Specification & Model Documentation
-
-**Version 1.0.0**  •  **March 28, 2026**  •  **HR Analytics Team**
-
----
+# Microsoft Azure ML — Benefits Eligibility Model
 
 ## 1. Project Overview
 
-This document describes all files required to deploy the Benefits Eligibility Classifier to Microsoft Azure ML. The model predicts whether an employee qualifies for company benefits based on their employment profile.
+**Project Name:** Azure-Deployment (Benefits Eligibility Model)
+**Project Type:** ML model deployment (Azure Machine Learning)
+**Status:** Development
 
-| Attribute | Value |
+### Description
+
+This project packages and deploys a Benefits Eligibility Classifier to Microsoft Azure ML. The model predicts whether an employee qualifies for company benefits (`eligible` / `not_eligible`) based on 7 employment-profile features, using a scikit-learn `GradientBoostingClassifier`. It includes the Azure ML scoring script and governance metadata for the deployment.
+
+## 2. Core Features
+
+- Gradient Boosting classifier trained on 7 employment features (age, employment type, years of service, weekly hours, department, salary band, dependents) to predict benefits eligibility.
+- Azure ML-compliant `azure_score.py` implementing the required `init()` / `run()` entry points.
+- `run()` accepts a bare JSON record/batch or the managed-endpoint envelope `{"data": <payload>}`, and returns labeled predictions with class probabilities.
+- Governance metadata tracking owner, risk level, protected attributes (`age`, `has_dependents`), training date, and hyperparameters, intended for monitoring via the Azure ML Responsible AI dashboard.
+
+## 3. Tech Stack
+
+| Component | Technology |
 |---|---|
-| Use Case | Employee benefits eligibility classification |
-| Algorithm | Gradient Boosting Classifier (scikit-learn) |
-| Owner | HR Analytics Team |
-| Version | 1.0.0 |
-| Risk Level | Medium — affects employee compensation |
-| Training Date | 2026-03-28 |
-| Output Classes | `not_eligible` \| `eligible` |
+| Model | scikit-learn `GradientBoostingClassifier`, XGBoost |
+| Data handling | pandas, numpy, joblib |
+| Platform | Azure Machine Learning (`azureml-defaults`, Managed Online Endpoints) |
 
-## 2. Repository & Artifact Structure
+## 4. Project Structure
 
-All files must be arranged exactly as shown. The `model/` directory is registered as an Azure ML Model asset.
-
-```text
-benefits-model-azure/
-├── model/
-│   ├── model.pkl               ← trained GradientBoostingClassifier
-│   ├── preprocessor.joblib     ← fitted ColumnTransformer
-│   └── label_map.json          ← {"0": "not_eligible", "1": "eligible"}
-├── code/
-│   ├── score.py                ← Azure ML entry-point script
-│   ├── requirements.txt        ← runtime Python dependencies
-│   └── config.yaml             ← (optional) deployment config
-├── metadata/
-│   └── model_metadata.json     ← governance & audit fields
-├── test/
-│   ├── sample_request.json     ← validation payload
-│   └── expected_response.json  ← expected inference output
-└── README.md
+```
+Azure-Deployment/
+├── azure_score.py            # Azure ML entry-point script (init/run)
+├── doc/                      # architecture diagram
+├── *_guide.md                 # deployment/runbook guides (ML, NN, SDOH variants)
+└── LICENSE
 ```
 
-## 3. Artifact 1 — Model Bundle (MANDATORY)
+## 5. Prerequisites
 
-### 3.1 Registered model contents
+- An Azure subscription with an Azure ML workspace
+- A trained model bundle (`model.pkl`, `preprocessor.joblib`, `label_map.json`) — this repository contains the scoring script only, not a training script; see the guide documents below for the training walkthrough
+- `azureml-defaults`, numpy, pandas, scikit-learn, xgboost, joblib on the deployment environment image
 
-1. `model.pkl` — serialised `GradientBoostingClassifier`
-2. `preprocessor.joblib` — fitted `ColumnTransformer` (`StandardScaler` + `OneHotEncoder`)
-3. `label_map.json` — integer-to-class-name mapping
+## 6. How to Run
 
-### 3.2 Feature Schema
+### Train
 
-| Feature | Type | Description / Allowed Values |
-|---|---|---|
-| age | int | Employee age in years (22–65) |
-| employment_type | string | `full_time` \| `part_time` \| `contractor` |
-| years_of_service | int | Completed years at the company (0–40) |
-| weekly_hours | int | Contracted weekly hours (10–55) |
-| department | string | `engineering` \| `sales` \| `hr` \| `finance` \| `operations` |
-| salary_band | string | `band_1` \| `band_2` \| `band_3` \| `band_4` \| `band_5` |
-| has_dependents | int | Binary flag — `0 = no dependents`, `1 = has dependents` |
+This repository does not include a training script. Produce `model.pkl`, `preprocessor.joblib`, and `label_map.json` using your own pipeline (see `benefits_ml_azure_deployment_guide.md` / `benefits_nn_azure_guide.md` for the full training walkthrough).
 
-### 3.3 label_map.json
+### Deploy
 
-```json
-{
- "0": "not_eligible",
- "1": "eligible"
-}
-```
+1. Register the trained `model/` artifacts as an Azure ML Model asset via the SDK or CLI.
+2. Create an Azure ML Environment from a curated base image (e.g. `AzureML-sklearn-1.0-ubuntu20.04-py38-cpu`) plus the required packages (numpy, pandas, scikit-learn, xgboost, joblib, azureml-defaults).
+3. Create a `ManagedOnlineEndpoint` and `ManagedOnlineDeployment` with `entry_point` set to `azure_score.py`.
+4. Invoke the endpoint with `Content-Type: application/json` — `run()` handles both bare and `{"data": ...}`-enveloped payloads.
+5. Monitor `age` and `has_dependents` (protected attributes) for bias drift using the Azure ML Responsible AI dashboard.
 
-## 4. Artifact 2 — Inference Script (MANDATORY)
+### Feature schema
 
-**File:** `code/score.py` — defines the two Azure ML entry-point functions `init()` and `run()`.
+| Feature | Type | Allowed values |
+| :--- | :--- | :--- |
+| age | int | 22-65 |
+| employment_type | string | `full_time`, `part_time`, `contractor` |
+| years_of_service | int | 0-40 |
+| weekly_hours | int | 10-55 |
+| department | string | `engineering`, `sales`, `hr`, `finance`, `operations` |
+| salary_band | string | `band_1`...`band_5` |
+| has_dependents | int | 0 or 1 |
 
-### 4.1 init()
+## 7. Known Limitations
 
-Called once at container startup. Reads `AZUREML_MODEL_DIR`, loads `model.pkl`, `preprocessor.joblib`, and `label_map.json` into module-level globals.
+- No training script or test payloads are included in this repository (unlike the AWS/Vertex/Watson counterparts) — it covers scoring/deployment only.
+- Bias/drift monitoring on protected attributes is a manual Responsible AI dashboard setup step, not automated in this codebase.
 
-```python
-def init():
-    global model, preprocessor, label_map
-    model_dir = os.getenv('AZUREML_MODEL_DIR', '.')
-    model        = joblib.load(os.path.join(model_dir, 'model.pkl'))
-    preprocessor = joblib.load(os.path.join(model_dir, 'preprocessor.joblib'))
-    with open(os.path.join(model_dir, 'label_map.json')) as f:
-        label_map = json.load(f)
-```
+## 8. License
 
-### 4.2 run(raw_data)
-
-Called for every inference request. Accepts a single JSON dict or a list of dicts (batch). Also handles the Azure ML managed endpoint envelope `{"data": <payload>}`. Returns a JSON string.
-
-```python
-def run(raw_data):
-    payload = json.loads(raw_data)
-    if isinstance(payload, dict) and 'data' in payload:
-        payload = payload['data']
-    if isinstance(payload, dict): payload = [payload]
-    df = pd.DataFrame(payload)[EXPECTED_FEATURES]
-    X           = preprocessor.transform(df)
-    raw_preds   = model.predict(X).tolist()
-    class_proba = model.predict_proba(X).tolist()
-    labeled     = [label_map[str(p)] for p in raw_preds]
-    return json.dumps({'predictions': labeled, 'probabilities': class_proba})
-```
-
-## 5. Artifact 3 — Requirements File (MANDATORY)
-
-**File:** `code/requirements.txt` — installed by Azure ML at environment build time.
-
-```text
-numpy>=1.24
-pandas>=2.0
-scikit-learn>=1.3
-xgboost>=2.0
-joblib>=1.3
-azureml-defaults
-```
-
-## 6. Artifact 4 — Model Metadata
-
-**File:** `metadata/model_metadata.json` — used for Azure ML model registry, governance, and auditing.
-
-| Field | Value for This Model |
-|---|---|
-| model_version | 1.0.0 |
-| owner | HR Analytics Team |
-| use_case | Employee benefits eligibility classification |
-| risk_level | medium |
-| protected_attributes | age, has_dependents |
-| training_date | 2026-03-28 |
-| algorithm | GradientBoostingClassifier |
-| training_samples | 1,600 |
-| test_samples | 400 |
-
-```json
-{
-  "model_version": "1.0.0",
-  "owner": "HR Analytics Team",
-  "use_case": "Employee benefits eligibility classification",
-  "risk_level": "medium",
-  "protected_attributes": ["age", "has_dependents"],
-  "training_date": "2026-03-28",
-  "algorithm": "GradientBoostingClassifier",
-  "hyperparameters": {
-    "n_estimators": 200, "learning_rate": 0.05,
-    "max_depth": 4, "subsample": 0.8
-  }
-}
-```
-
-## 7. Artifact 5 — Sample Payloads (Validation)
-
-### 7.1 test/sample_request.json
-
-```json
-{
-  "data": [
-    {
-      "age": 34, "employment_type": "full_time",
-      "years_of_service": 5, "weekly_hours": 40,
-      "department": "engineering", "salary_band": "band_3",
-      "has_dependents": 1
-    },
-    {
-      "age": 27, "employment_type": "part_time",
-      "years_of_service": 0, "weekly_hours": 20,
-      "department": "sales", "salary_band": "band_1",
-      "has_dependents": 0
-    }
-  ]
-}
-```
-
-### 7.2 test/expected_response.json
-
-```json
-{
-  "predictions": ["eligible", "not_eligible"],
-  "probabilities": [[0.08, 0.92], [0.87, 0.13]],
-  "label_order": ["not_eligible", "eligible"]
-}
-```
-
-## 8. Deployment Notes
-
-1. Register the `model/` directory as an Azure ML Model asset via the SDK or CLI.
-2. Create an Azure ML Environment referencing `requirements.txt` and a base curated image (e.g. `AzureML-sklearn-1.0-ubuntu20.04-py38-cpu`).
-3. Create a `ManagedOnlineEndpoint` and `ManagedOnlineDeployment` pointing `score.py` as `entry_point`.
-4. Invoke the endpoint with `Content-Type: application/json`; the `run()` wrapper handles bare and enveloped payloads.
-5. Monitor `protected_attributes` (`age`, `has_dependents`) for bias drift using Azure ML Responsible AI dashboard.
-
----
-
-End of Document
+MIT License (see `LICENSE`).
